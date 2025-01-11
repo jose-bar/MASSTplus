@@ -1,16 +1,19 @@
 #include <iostream>
+#include <fstream>
 #include <vector>
+#include <tuple>
+#include <unordered_map>
+#include <sstream>
 #include <string>
 #include <algorithm>
 #include <chrono>
-#include "bits/stdc++.h"
+//#include "bits/stdc++.h"
 using namespace std;
 
 #define FOR(i, hi) for (int i = 0; i < hi; ++i)
 #define FORR(i, hi) for (int i = hi - 1; i >= 0; --i)
 #define For(i, lo, hi) for (int i = lo; i < hi; ++i)
 #define Forr(i, hi, lo) for (int i = hi - 1; i >= lo; --i)
-
 
 typedef struct {
     //index of peak in the spectrum it came from
@@ -112,29 +115,39 @@ static int Output_cluster_minsize = 2;
 static int FILTERK = 5;
 
 vector<string> get_files(string content_files) {
-    //filename should be name of file containing a path to an mgf file per line
     vector<string> filenames;
     ifstream f(content_files);
+    
+    // Debug: Check if file opened successfully
+    if (!f.is_open()) {
+        cout << "ERROR: Could not open file: " << content_files << endl;
+        return filenames;
+    }
+    
     string path_string;
     int load_tracer = 0;
+    
+    // Debug: Print each line as we read it
+    cout << "Reading files from: " << content_files << endl;
+    
     while ((f >> path_string)) {
+        cout << "Found path: " << path_string << endl;
+        
         int path_len = path_string.length();
         int ext_begin = path_string.find_last_of(".");
         string file_ext = path_string.substr(ext_begin + 1);
+        
         if ((file_ext == "mgf") || (file_ext == "mzML")) {
+            // Debug: Print when we actually add a file
+            cout << "Adding valid file: " << path_string << endl;
             filenames.push_back(path_string);
             load_tracer += 1;
+        } else {
+            cout << "Skipping file with invalid extension: " << file_ext << endl;
         }
-        /*
-        if (path_len > 4) {
-            string file_type = path_string.substr(path_len - 4, path_len);
-            if (file_type.compare(".mgf") == 0) {
-                filenames.push_back(path_string);
-                load_tracer += 1;
-            }
-        }
-        */
     }
+    
+    cout << "Total valid files found: " << load_tracer << endl;
     return filenames;
 }
 
@@ -149,7 +162,6 @@ pair<file_info_t, pair<pepmass_distribution_t, topfour_pepmass_raw_t>> parse_inp
     file_info_t &file_info = res.first;
     pepmass_distribution_t &pepmass_distribution = res.second.first;
     topfour_pepmass_raw_t &topfour_pepmass_raw = res.second.second;
-    //pair<spectratoinfo_t, top_four_combined_t> res;
 
     unordered_map<string, int> &file_start_scan = file_info.first;
     unordered_map<int, string> &scan_file_src = file_info.second;
@@ -165,10 +177,9 @@ pair<file_info_t, pair<pepmass_distribution_t, topfour_pepmass_raw_t>> parse_inp
     pepmass_distribution.resize(500);
     pepmass_spectra.resize(500);
 
-    //cout << "starting parsing inputs" << endl;
     int scan_tracer = 0;
-    //start counting the files needed
     int verification = 0;
+
     for (int i=0; i<filenames.size(); i++) {
         string filename = filenames[i];
         int ext_begin = filename.find_last_of(".");
@@ -176,13 +187,23 @@ pair<file_info_t, pair<pepmass_distribution_t, topfour_pepmass_raw_t>> parse_inp
 
         file_start_scan[filename] = scan_tracer;
         if (file_ext == "mgf") {
+            cout << "Processing MGF file: " << filename << endl;
             ifstream f(filename);
+            if (!f.is_open()) {
+                cout << "ERROR: Could not open MGF file: " << filename << endl;
+                continue;
+            }
+
+            int spectra_count = 0;
             string a;
+            
             while (getline(f, a)) {
                 if (a == "BEGIN IONS") {
+                    spectra_count++;
                     verification += 1;
                     double pepmass = -1;
-                    double rtinsec = -1; 
+                    double rtinsec = 0.0;  // Default to 0.0 instead of -1
+                    
                     while (getline(f, a)) {
                         if (a.rfind("PEPMASS", 0) == 0) {
                             pepmass = stod(a.substr(8));
@@ -190,17 +211,14 @@ pair<file_info_t, pair<pepmass_distribution_t, topfour_pepmass_raw_t>> parse_inp
                         if (a.rfind("RTINSECONDS", 0) == 0) {
                             rtinsec = stod(a.substr(12));
                         }
-                        if ((pepmass != -1) && (rtinsec != -1)) {
-                            /*
-                            if (pepmass == -1) {
-                                break;
-                            }
-                            */
+                        // Modified condition to only check for valid pepmass
+                        if (pepmass != -1) {
                             vector<vector<tuple<int, double, double>>> curv_shared;
                             curv_shared.resize(20);
                             long double magnitude = 0;
                             bool nonempty = false;
-                            /*
+                            
+                            // Rest of the spectrum processing...
                             while (getline(f, a)) {
                                 if (a == "END IONS") {
                                     break;
@@ -208,130 +226,107 @@ pair<file_info_t, pair<pepmass_distribution_t, topfour_pepmass_raw_t>> parse_inp
                                 double mz, mass;
                                 stringstream ss(a);
                                 ss >> mz >> mass;
-                                //make sure no two peaks are that close to each other 
-                                if (abs(mz - prev_peak_mz) >= 2 * TOLERANCE) {
-                                    // get bucket index for mz in both shared peaks settings
-                                    int ind_shared = round(mz / TOLERANCE);
-                                    tuple<int, double, double> elem{ind_shared, mz, sqrt(mass)};
-                                    curv_shared.push_back(elem);
-                                    magnitude += mass;
-                                    prev_peak_mz = mz;
-                                }
-                                nonempty = true;
-                            }
-                            */
-                            while (getline(f, a)) {
-                                if (a == "END IONS") {
-                                    break;
-                                }
-                                double mz, mass;
-                                stringstream ss(a);
-                                ss >> mz >> mass;
-                                // get bucket index for mz in both shared peaks settings
+                                
                                 int ind_shared = round(mz / TOLERANCE);
-
-                                //Modification
                                 int filter_k_index = round(mz / SELECTIONRANGE);
+                                
                                 if (filter_k_index >= curv_shared.size()) {
                                     curv_shared.resize(filter_k_index * 3 / 2 + 1);
                                 }
+                                
                                 tuple<int, double, double> elem{ind_shared, mz, mass};
                                 curv_shared[filter_k_index].push_back(elem);
-                                //magnitude += mass;
                                 nonempty = true;
                             }
-                            vector<tuple<int, double, double>> filtered_shared_peaks;
-                            //MODIFICATION FOR FILTERING TOPK
-                            for (int filteringk_index=0; filteringk_index < curv_shared.size(); filteringk_index ++) {
-                                vector<tuple<int, double, double>> primitive_bin = curv_shared[filteringk_index];
-                                if (primitive_bin.size() >= FILTERK) {
-                                    sort(primitive_bin.begin(), primitive_bin.end(), sort_tuple);
-                                    curv_shared[filteringk_index] = {primitive_bin.begin(), primitive_bin.begin()+FILTERK};
-                                }
-                                int peaks_in_bin = primitive_bin.size();
-                                int peak_preserved = min(peaks_in_bin, FILTERK);
-                                for (int j = 0; j < peak_preserved; j++) {
-                                    filtered_shared_peaks.push_back(primitive_bin[j]);
-                                    double mass = get<2>(primitive_bin[j]);
-                                    magnitude += mass * mass;
-                                }
-                            }
-                            //cout << "start adding peaks" << endl;
+                            
+                            // Process the peaks if we found any
                             if (nonempty) {
-                            	vector<Top_peak_t> top_four_peaks;
-                            	for (int j=0; j<4; j++) {
-                            		top_four_peaks.push_back({0, 0.0, 0.0});
-                            	}
-                                //cout << "top_four initialized" << endl;
+                                vector<tuple<int, double, double>> filtered_shared_peaks;
+                                //MODIFICATION FOR FILTERING TOPK
+                                for (int filteringk_index=0; filteringk_index < curv_shared.size(); filteringk_index ++) {
+                                    vector<tuple<int, double, double>> primitive_bin = curv_shared[filteringk_index];
+                                    if (primitive_bin.size() >= FILTERK) {
+                                        sort(primitive_bin.begin(), primitive_bin.end(), sort_tuple);
+                                        curv_shared[filteringk_index] = {primitive_bin.begin(), primitive_bin.begin()+FILTERK};
+                                    }
+                                    int peaks_in_bin = primitive_bin.size();
+                                    int peak_preserved = min(peaks_in_bin, FILTERK);
+                                    for (int j = 0; j < peak_preserved; j++) {
+                                        filtered_shared_peaks.push_back(primitive_bin[j]);
+                                        double mass = get<2>(primitive_bin[j]);
+                                        magnitude += mass * mass;
+                                    }
+                                }
+                                
+                                vector<Top_peak_t> top_four_peaks;
+                                for (int j=0; j<4; j++) {
+                                    top_four_peaks.push_back({0, 0.0, 0.0});
+                                }
+                                
                                 int scan = scan_tracer;
                                 scan_tracer += 1;
                                 magnitude = sqrt(magnitude);
-                                int pepmass_idx = round(pepmass / MASSTOLERANCE); 
+                                int pepmass_idx = round(pepmass / MASSTOLERANCE);
+                                
                                 for (int k = 0; k < filtered_shared_peaks.size(); ++k) {
                                     tuple<int, double, double> p = filtered_shared_peaks[k];
                                     int ind = get<0>(p);
                                     double mz = get<1>(p);
                                     double mass = get<2>(p);
-                                    //cout << "updating spectratomz once" << endl;
                                     spectratomz_shared[scan].push_back({ind, pepmass_idx, scan, mz, (double)(mass / magnitude)});
+                                    
                                     int top_four_ind = round(mz / TOPFOURTOLERANCE);
                                     if (mass > top_four_peaks[2].mass) {
-                                    	if (mass > top_four_peaks[1].mass) {
-                                    		if (mass > top_four_peaks[0].mass) {
-                                    			top_four_peaks[3] = {top_four_peaks[2].ind, top_four_peaks[2].mass, top_four_peaks[2].mz};
-                                    			top_four_peaks[2] = {top_four_peaks[1].ind, top_four_peaks[1].mass, top_four_peaks[1].mz};
-                                    			top_four_peaks[1] = {top_four_peaks[0].ind, top_four_peaks[0].mass, top_four_peaks[0].mz};
-                                    			top_four_peaks[0] = {top_four_ind, mass, mz};
-                                    		} else {
-                                    			top_four_peaks[3] = {top_four_peaks[2].ind, top_four_peaks[2].mass, top_four_peaks[2].mz};
-                                    			top_four_peaks[2] = {top_four_peaks[1].ind, top_four_peaks[1].mass, top_four_peaks[1].mz};
-                                    			top_four_peaks[1] = {top_four_ind, mass, mz};
-                                    		}
-
-                                    	} else {
-                                    		top_four_peaks[3] = {top_four_peaks[2].ind, top_four_peaks[2].mass, top_four_peaks[2].mz};
-                                    		top_four_peaks[2] = {top_four_ind, mass, mz};
-                                    	}
-
-                                    } else {
-                                    	if (mass > top_four_peaks[3].mass) {
-                                    		top_four_peaks[3] = {top_four_ind, mass, mz};
-                                    	}
+                                        if (mass > top_four_peaks[1].mass) {
+                                            if (mass > top_four_peaks[0].mass) {
+                                                top_four_peaks[3] = top_four_peaks[2];
+                                                top_four_peaks[2] = top_four_peaks[1];
+                                                top_four_peaks[1] = top_four_peaks[0];
+                                                top_four_peaks[0] = {top_four_ind, mass, mz};
+                                            } else {
+                                                top_four_peaks[3] = top_four_peaks[2];
+                                                top_four_peaks[2] = top_four_peaks[1];
+                                                top_four_peaks[1] = {top_four_ind, mass, mz};
+                                            }
+                                        } else {
+                                            top_four_peaks[3] = top_four_peaks[2];
+                                            top_four_peaks[2] = {top_four_ind, mass, mz};
+                                        }
+                                    } else if (mass > top_four_peaks[3].mass) {
+                                        top_four_peaks[3] = {top_four_ind, mass, mz};
                                     }
                                 }
-                                if (pepmass_idx >= pepmass_spectra.size()){
+                                
+                                if (pepmass_idx >= pepmass_spectra.size()) {
                                     pepmass_spectra.resize(pepmass_idx * 3 / 2 + 1);
                                     pepmass_distribution.resize(pepmass_idx * 3 / 2 + 1);
                                 }
-
+                                
                                 int current_top_four_bins = pepmass_spectra[pepmass_idx].size();
-                                //add top-peaks to data-structure
-                                //cout << "finish adding peaks" << endl;
                                 for (int j=0; j<4; j++) {
-                               		int top_four_ind = top_four_peaks[j].ind;
+                                    int top_four_ind = top_four_peaks[j].ind;
                                     double top_four_intensity = top_four_peaks[j].mass;
                                     double top_four_mz = top_four_peaks[j].mz;
-                                    if (top_four_intensity > 0.0){
-                                        if (top_four_ind >= current_top_four_bins){
+                                    if (top_four_intensity > 0.0) {
+                                        if (top_four_ind >= current_top_four_bins) {
                                             pepmass_spectra[pepmass_idx].resize(top_four_ind * 3 / 2 + 1);
                                         }
-                                        //pepmass_spectra[pepmass_idx][top_four_ind].push_back({scan, pepmass, top_four_mz});
                                         pepmass_spectra[pepmass_idx][top_four_ind].push_back(scan);
-                                        scan_to_top_peaks[scan] = top_four_peaks;
                                     }
-
-                            	}
+                                }
+                                
                                 scan_to_top_peaks[scan] = top_four_peaks;
                                 pepmass_distribution[pepmass_idx].push_back(scan);
                                 spectra_general[scan] = {pepmass, rtinsec, magnitude};
                                 scan_file_src[scan] = filename;
-                                //cout << "a spectra parsed" << endl;
                             }
                             break;
-                        }  
+                        }
                     }
                 }
             }
+            
+            cout << "Found " << spectra_count << " spectra in " << filename << endl;
             f.close();
         }
     }
@@ -909,7 +904,6 @@ int main(int argc, char* argv[]) {
     cout << "total number of spectra: " <<  cluster_info.first.size() << endl;
     cout << "total number of clusters: " << cluster_info.second.size() << endl;
 
-
     auto cluster_end = chrono::steady_clock::now();
     chrono::duration<double> total_cluster_time = cluster_end - cluster_start;
     cout << "total clustering time: " << total_cluster_time.count() << endl;
@@ -927,6 +921,11 @@ int main(int argc, char* argv[]) {
     scan_to_clustercenter_t& spectra_cluster = cluster_info.first;
     clustercenter_to_scans_t& cluster_content = cluster_info.second;
     spectra_general_info_t &spectra_general = spectrainfo_all.second;
+
+    cout << "Cluster Content Size:" << cluster_content.size() << endl;
+
+
+
     for (int cluster_idx = 0; cluster_idx < cluster_content.size(); cluster_idx ++) {
         vector<int> content_tmp = cluster_content[cluster_idx];
         if (content_tmp.size() < Output_cluster_minsize) {
